@@ -1,0 +1,86 @@
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+*::-webkit-scrollbar{/* 滚动条样式*/
+  display: none;
+}
+
+#map {
+  position: relative;
+  /* transform: scale(2); */
+  transform-origin: left top;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border:1px solid #fff;
+  border-radius: 100px;
+  position: absolute;
+  z-index: 1;
+  font-size: 1px;
+  transform: translate(-50%,-50%);
+  cursor: pointer;
+  transition:all 0.1s;
+}
+.dot:hover{
+  z-index: 2;
+}
+.dot:hover::before{
+  content: attr(data-title);
+  display: block;
+  color: #fff;
+  background: rgb(58, 58, 58);
+  padding: .2px 4px 1.6px;
+  font-size: 15px;
+  white-space: nowrap;
+  border-radius: 2px;
+  position: absolute;
+  top: -100%;
+  left: 50%;
+  transform: translate(-50%,-100%);
+}
+.dot:hover::after{
+  display: block;
+  content:"";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%,-8px);
+  border-top:5px solid rgb(58, 58, 58);
+  border-left:5px solid transparent;
+  border-right:5px solid transparent;
+  transition:all 0.1s;
+}
+.dot .tag{
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform:translateY(-50%);
+  font-size: 5px;
+  white-space: nowrap;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 1px 2.2px;
+  border-radius: 100px;
+  cursor: pointer;
+}
+@media screen and (max-width: 800px) {
+  .dot .tag,.dot::before,.dot::after{
+    display: none;
+  }
+}
+@keyframes breath {
+  0% {
+    box-shadow:0px 0px 0px 0px #fff
+  }
+  100% {
+    box-shadow:0px 0px 0px 3px rgba(255, 255, 255, 0)
+  }
+}

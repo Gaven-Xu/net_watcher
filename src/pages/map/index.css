@@ -1,0 +1,21 @@
+.countDown{
+  position: absolute;
+  bottom: 50px;
+  left: 0;
+  padding: 10px 30px 10px 20px;
+  background: rgb(113, 207, 203);
+  border-radius: 0 200px 200px 0;
+  color:rgba(33, 140, 100, 1);
+  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.1);
+}
+.handleBox{
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  font-size:32px;
+  opacity:0.22;
+}
+.handleBox:hover{
+  opacity:1;
+}

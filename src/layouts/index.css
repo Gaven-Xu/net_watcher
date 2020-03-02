@@ -1,0 +1,17 @@
+.layout{
+  height:100%;
+}
+.header {
+  font-family: '微软雅黑', sans-serif;
+  text-align: center;
+  font-size:24px;
+  font-weight: normal;
+  letter-spacing: -1px;
+  background: rgb(88, 179, 156);
+  color: white;
+  margin: 0;
+}
+.content{
+  background-color: #fff;
+}
+

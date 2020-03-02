@@ -1,0 +1,20 @@
+directories:
+  output: build
+appId: com.unnuo.app
+productName: NetWatcher
+mac:
+  icon: public/logo.ico
+  target: zip
+win:
+  icon: public/logo.ico
+  target: zip
+nsis:
+  oneClick: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  installerIcon: public/logo.ico
+  uninstallerIcon: public/logo.ico
+  installerHeaderIcon: public/logo.ico
+  createDesktopShortcut: true
+  shortcutName: NetWatcher
+electronVersion: 6.0.9

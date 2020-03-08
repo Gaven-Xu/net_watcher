@@ -3,18 +3,18 @@ directories:
 appId: com.unnuo.app
 productName: NetWatcher
 mac:
-  icon: public/logo.ico
+  icon: public/logo.png
   target: zip
 win:
-  icon: public/logo.ico
+  icon: public/logo.png
   target: zip
 nsis:
   oneClick: false
   allowElevation: true
   allowToChangeInstallationDirectory: true
-  installerIcon: public/logo.ico
-  uninstallerIcon: public/logo.ico
-  installerHeaderIcon: public/logo.ico
+  installerIcon: public/logo.png
+  uninstallerIcon: public/logo.png
+  installerHeaderIcon: public/logo.png
   createDesktopShortcut: true
   shortcutName: NetWatcher
 electronVersion: 6.0.9

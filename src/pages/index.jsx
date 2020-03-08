@@ -16,6 +16,7 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
     addModalVisible: false,
     settingModalShow: false,
     list: [],
+    result: {},
     config: {}
   }
 
@@ -28,9 +29,6 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
       addInfo.handle = 'unwatch';
       DB.get('records').push(addInfo).write();
       message.success('地址添加成功');
-      this.setState({
-        addModalVisible: false
-      })
       this.fetchData()
     } else {
       message.warn('该地址已经存在')
@@ -60,7 +58,8 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
       .find({ address: updateInfo.address })
       .assign(updateInfo)
       .write();
-    this.fetchData()
+    this.fetchData();
+    this.watchingStart();
   }
 
   /**
@@ -79,26 +78,28 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
     })
   }
 
+  // 查询配置
+  fetchConfig() {
+    this.setState({
+      config: { ...DB.get('config').value() }
+    })
+  }
+
   // 修改配置
   changeConfig(config) {
     DB.get('config')
       .assign(config)
       .write()
-    this.fetchConfig(this.watchingStart)
-  }
-
-  // 查询配置
-  fetchConfig(cb) {
-    this.setState({
-      config: { ...DB.get('config').value() }
-    }, cb)
+    this.watchingStart();
   }
 
   // 开始监听
   watchingStart() {
+    let config = DB.get('config').value()
     clearInterval(window.ipInterval);
+    ipcRenderer.send('net-test')
     window.ipInterval = setInterval(() => {
-      if (this.state.config.rate && this.state.isWatching) {
+      if (config.rate && this.state.isWatching) {
         ipcRenderer.send('net-test')
       }
     }, parseInt(this.state.config.rate))
@@ -112,16 +113,26 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
     this.fetchData()
   }
 
+  /**
+   * map status to list
+   */
+  mapStatus(msg) {
+    console.log('网络监测结果', msg);
+    let newRes = {};
+    newRes[msg.options.address] = msg;
+    this.setState({
+      result: { ...this.state.result, ...newRes }
+    })
+  }
+
   componentDidMount() {
     this.fetchData();
-    this.fetchConfig();
-    // this.fetchCountDownTime();
-
-    // ipcRenderer.on('data-export', (e, values) => {
-    //   values && message.success('数据导出成功')
-    // })
+    this.fetchConfig()
     ipcRenderer.on('net-test-result', (e, values) => {
-      values && console.log('网络监测结果', values)
+      this.mapStatus(values);
+    })
+    ipcRenderer.on('net-test-error', (e, err) => {
+      console.error('监测错误', err);
     })
   }
 
@@ -192,8 +203,34 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
           className={styles.table}
           columns={[
             { title: '标题', dataIndex: 'title' },
-            { title: '地址', dataIndex: 'address' },
-            { title: '状态', dataIndex: 'status' },
+            {
+              title: '地址', dataIndex: 'address', render(value, record) {
+                return `${record.address}`
+              }
+            },
+            {
+              title: '均时', dataIndex: 's', render(_, record) {
+                let result = self.state.result[record.address];
+                let time = '-'
+                // 结果存在，时间存在，时间为数字
+                if (result && result.averageLatency && typeof result.averageLatency == 'number') {
+                  time = parseInt(result.averageLatency) + 'ms'
+                }
+                return time
+              }
+            },
+            {
+              title: '丢包', dataIndex: 'l', render(_, record) {
+                let result = self.state.result[record.address];
+                if (result) {
+                  let danger = result.errors.length > self.state.config.lost;
+                  let text = `${result.errors.length}/${result.options.attempts}`;
+                  return <span style={{ color: danger ? 'red' : 'black' }}>{text}</span>;
+                } else {
+                  return '-/-';
+                }
+              }
+            },
             {
               title: '监听开关',
               dataIndex: 'handle',
@@ -261,6 +298,7 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
           visible={this.state.addModalVisible}
           onOk={addInfo => {
             this.addData(addInfo)
+            this.setState({ addModalVisible: false })
           }}
           onCancel={() => {
             this.setState({ addModalVisible: false })
@@ -271,8 +309,8 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
           visible={this.state.settingModalShow}
           initialConfig={this.state.config}
           onOk={setting => {
-            console.log(setting)
             this.changeConfig(setting)
+            this.setState({ settingModalShow: false })
           }}
           onCancel={() => {
             this.setState({ settingModalShow: false })
@@ -283,6 +321,7 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
   }
 }
 
+// 添加弹窗
 @Form.create({ name: 'AddModal' }) class AddModal extends PureComponent {
 
   render() {
@@ -334,6 +373,7 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
 
 }
 
+// 设置弹窗
 @Form.create({ name: 'SetModal' }) class SetModal extends PureComponent {
 
   render() {
@@ -343,12 +383,12 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
     return (
       <Modal
         {...this.props}
+        width={330}
         onOk={() => {
           if (this.props.onOk) {
             this.props.form.validateFields((err, values) => {
               if (!err) {
                 this.props.onOk(values);
-                resetFields()
               }
             })
           }
@@ -372,13 +412,14 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
             })(
               <Slider className={styles.input} min={600} max={1000 * 5} step={100} />
             )}
+
           </Form.Item>
           <Form.Item label="掉包提醒">
             {getFieldDecorator('lost', {
               rules: [{ required: true, message: '掉包提醒' }],
               initialValue: this.props.initialConfig.lost || 2
             })(
-              <Slider className={styles.input} dots={true} min={1} max={10} />
+              <Slider className={styles.input} dots={true} min={1} max={4} />
             )}
           </Form.Item>
         </Form>

@@ -28,7 +28,7 @@ try {
 }
 
 // 初始化数据库，主要是数据库基本结构
-DB.defaults({ records: [], others: {} }).write();
+DB.defaults({ records: [], config: {} }).write();
 
 // 拓展数据库方法
 DB._.mixin({

@@ -1,0 +1,4 @@
+// 家园的接口地址
+window.ellaHomeApi = "https://qahomeapi.ellabook.cn"
+// window.ellaHomeApi = "https://devhomeapi.ellabook.cn"
+// window.ellaHomeApi = "https://homeapi.ellabook.cn"

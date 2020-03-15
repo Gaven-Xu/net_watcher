@@ -11,6 +11,7 @@
     "build-mac": "cross-env ENV=product umi build && electron-builder --mac --config electron_builder.yml"
   },
   "dependencies": {
+    "@network-utils/tcp-ping": "^1.2.0",
     "lowdb": "^1.0.0",
     "node-xlsx": "^0.15.0"
   },

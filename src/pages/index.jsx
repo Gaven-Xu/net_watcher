@@ -1,47 +1,48 @@
 import { PureComponent } from 'react';
-import { Form, Input, Button, Modal, Table, Cascader, Radio, Popconfirm, Popover, DatePicker, Icon, message } from 'antd';
+import { Form, Input, Checkbox, Slider, Button, Modal, Table, Radio, Popconfirm, Icon, message } from 'antd';
 import moment from 'moment';
 import styles from './index.css';
-import P2Data from '@/assets/P2Data2.js';
 import { formatTime, formatTimeTag } from '@/utils/index.js';
 
 const electron = window.require('electron');
 const { ipcRenderer } = electron;
 const { DB } = electron.remote.require('./DB.js');
 
+window.ipInterval = null;
+
 export default @Form.create({ name: 'Index' }) class Index extends PureComponent {
   state = {
+    isWatching: false,
     addModalVisible: false,
-    list: []
+    settingModalShow: false,
+    list: [],
+    result: {},
+    config: {}
   }
 
   /**
-   * 添加代理商数据
-   * @param {object} addInfo 全新的代理商数据
+   * 添加检测地址
+   * @param {object} addInfo 全新的地址数据
    */
   addData(addInfo) {
-    if (!DB.get('records').find({ id: addInfo.id }).value()) {
+    if (!DB.get('records').find({ address: addInfo.address }).value()) {
+      addInfo.handle = 'unwatch';
       DB.get('records').push(addInfo).write();
-      ipcRenderer.send('map-data-update', addInfo);
-      message.success('代理商添加成功');
-      this.setState({
-        addModalVisible: false
-      })
+      message.success('地址添加成功');
       this.fetchData()
     } else {
-      message.warn('该地区代理数据已存在')
+      message.warn('该地址已经存在')
     }
   }
 
   /**
-   *
-   * @param {object} removeInfo 需要删除的代理商数据
+   * 删除监测地址
+   * @param {object} removeInfo 需要删除的地址数据
    */
   deleteData(removeInfo) {
-    if (DB.get('records').find({ id: removeInfo.id }).value()) {
+    if (DB.get('records').find({ address: removeInfo.address }).value()) {
       DB.get('records').remove(removeInfo).write();
-      ipcRenderer.send('map-data-delete', removeInfo);
-      message.success('删除成功');
+      // ipcRenderer.send('map-data-delete', removeInfo);
       this.fetchData()
     } else {
       message.warn('数据不存在')
@@ -49,17 +50,16 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
   }
 
   /**
-   * 修改代理商数据，主要是状态
-   * @param {object} updateInfo 修改之后的代理商数据
+   * 修改地址数据，主要是状态
+   * @param {object} updateInfo 修改之后的地址数据
    */
   changeData(updateInfo) {
     DB.get('records')
-      .find({ id: updateInfo.id })
+      .find({ address: updateInfo.address })
       .assign(updateInfo)
       .write();
-    ipcRenderer.send('map-data-update', updateInfo);
-    message.success('编辑成功');
-    this.fetchData()
+    this.fetchData();
+    this.watchingStart();
   }
 
   /**
@@ -68,7 +68,7 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
   fetchData() {
     this.props.form.validateFields((err, values) => {
       if (!err) {
-        let search = values.search.replace('已签约', 'checked').replace('签约中', 'checking').replace('未签约', 'uncheck')
+        let search = values.search;
         let list = DB.get('records').fuzzyAnd(search).value();
         this.setState({
           list
@@ -78,33 +78,31 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
     })
   }
 
-  /**
-   * 导出Excel
-   */
-  exportExcel() {
-    let result = {
-      cols: [
-        { name: '代理人', key: 0 },
-        { name: '联系方式', key: 1 },
-        { name: '签约时间', key: 2 },
-        { name: '代理地区', key: 3 },
-        { name: '签约状态', key: 4 }
-      ],
-      data: this.state.list.map(item => {
-        return [
-          item.username,
-          item.mobile,
-          formatTime(item.addTime),
-          item.area.areaName,
-          {
-            'checked': '已签约',
-            'checking': '签约中',
-            'uncheck': '未签约',
-          }[item.status],
-        ]
-      })
-    }
-    ipcRenderer.send('map-data-export', result, 'FILE' + new Date().getTime());
+  // 查询配置
+  fetchConfig() {
+    this.setState({
+      config: { ...DB.get('config').value() }
+    })
+  }
+
+  // 修改配置
+  changeConfig(config) {
+    DB.get('config')
+      .assign(config)
+      .write()
+    this.watchingStart();
+  }
+
+  // 开始监听
+  watchingStart() {
+    let config = DB.get('config').value()
+    clearInterval(window.ipInterval);
+    ipcRenderer.send('net-test')
+    window.ipInterval = setInterval(() => {
+      if (config.rate && this.state.isWatching) {
+        ipcRenderer.send('net-test')
+      }
+    }, parseInt(this.state.config.rate))
   }
 
   /**
@@ -116,37 +114,25 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
   }
 
   /**
-   *
-   * @param {*} moment 时间对象
-   * 1. 存储倒计时deadline到数据库
-   * 2. 通知倒计时已修改——主进程 转发到 地图
-   * 3. 修改state，单向绑定到日期输入框
-   * 4. 通知修改成功
+   * map status to list
    */
-  changeCountDownTime(moment) {
-    let time = !!moment ? moment.format() : null;
-    DB.set('others.deadline', time).write();
-    ipcRenderer.send('count-update', time);
+  mapStatus(msg) {
+    console.log('网络监测结果', msg);
+    let newRes = {};
+    newRes[msg.options.address] = msg;
     this.setState({
-      deadline: time
-    })
-    message.success('修改成功');
-  }
-
-  /**
-   * 查询当前设置的倒计时
-   */
-  fetchCountDownTime() {
-    this.setState({
-      deadline: DB.get('others.deadline').value()
+      result: { ...this.state.result, ...newRes }
     })
   }
 
   componentDidMount() {
     this.fetchData();
-    this.fetchCountDownTime();
-    ipcRenderer.on('data-export', (e, values) => {
-      values && message.success('数据导出成功')
+    this.fetchConfig()
+    ipcRenderer.on('net-test-result', (e, values) => {
+      this.mapStatus(values);
+    })
+    ipcRenderer.on('net-test-error', (e, err) => {
+      console.error('监测错误', err);
     })
   }
 
@@ -158,6 +144,8 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
       form: { getFieldDecorator }
     } = this.props;
 
+    console.log("当前监听配置", this.state.config)
+
     let toobar = (
       <div style={{ padding: 10 }}>
         <Form layout="inline">
@@ -168,63 +156,95 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
             {getFieldDecorator('search', {
               initialValue: ''
             })(
-              <Input.Search enterButton="检索" style={{ width: 300 }} onSearch={this.fetchData.bind(this)} />
+              <Input.Search allowClear enterButton="检索" style={{ width: 300 }} onSearch={this.fetchData.bind(this)} />
             )}
           </Form.Item>
-          <Form.Item>
-            <Button type="default" onClick={this.reset.bind(this)}>重置</Button>
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" onClick={this.exportExcel.bind(this)}>导出</Button>
-          </Form.Item>
-          <Form.Item>
-            多条件搜索请用空格隔开
-          </Form.Item>
+          {
+            !this.state.isWatching ? <Form.Item>
+              <Button type="primary" onClick={() => {
+                this.setState({
+                  isWatching: true
+                }, this.watchingStart)
+              }}>开始监听</Button>
+            </Form.Item> :
+              <Form.Item>
+                <Button type="danger" onClick={() => {
+                  this.setState({
+                    isWatching: false
+                  }, () => {
+                    clearInterval(window.ipInterval)
+                  })
+                }}>关闭监听</Button>
+              </Form.Item>
+          }
         </Form>
       </div>
     )
 
-    let dataPop = (
-      <div>
-        <div>已签约:{this.state.list.filter(item => item.status === 'checked').length}</div>
-        <div>签约中:{this.state.list.filter(item => item.status === 'checking').length}</div>
-        <div>未签约:{this.state.list.filter(item => item.status === 'uncheck').length}</div>
-      </div>
-    )
+    // let dataPop = (
+    //   <div>
+    //     <div>已签约:{this.state.list.filter(item => item.status === 'checked').length}</div>
+    //     <div>签约中:{this.state.list.filter(item => item.status === 'checking').length}</div>
+    //     <div>未签约:{this.state.list.filter(item => item.status === 'uncheck').length}</div>
+    //   </div>
+    // )
 
-    let timeSet = (
-      <DatePicker defaultValue={moment(this.state.deadline)} showTime placeholder="Select Time" onChange={this.changeCountDownTime.bind(this)} />
-    )
+    // let timeSet = (
+    //   <DatePicker defaultValue={moment(this.state.deadline)} showTime placeholder="Select Time" onChange={this.changeCountDownTime.bind(this)} />
+    // )
     return (
       <>
         {toobar}
         <Table
-          rowKey="id"
+          rowKey="address"
           size="small"
           bordered
           dataSource={this.state.list}
           className={styles.table}
           columns={[
-            { title: '代理人', dataIndex: 'username' },
-            { title: '联系方式', dataIndex: 'mobile' },
-            { title: '签约时间', dataIndex: 'addTime', render: formatTimeTag },
-            // { title: '更新时间', dataIndex: 'updateTime', render: formatTime },
-            { title: '代理地区', render(record) { return record.area.areaName } },
+            { title: '标题', dataIndex: 'title' },
             {
-              title: '操作',
-              dataIndex: 'status',
+              title: '地址', dataIndex: 'address', render(value, record) {
+                return `${record.address}`
+              }
+            },
+            {
+              title: '均时', dataIndex: 's', render(_, record) {
+                let result = self.state.result[record.address];
+                let time = '-'
+                // 结果存在，时间存在，时间为数字
+                if (result && result.averageLatency && typeof result.averageLatency == 'number') {
+                  time = parseInt(result.averageLatency) + 'ms'
+                }
+                return time
+              }
+            },
+            {
+              title: '丢包', dataIndex: 'l', render(_, record) {
+                let result = self.state.result[record.address];
+                if (result) {
+                  let danger = result.errors.length > self.state.config.lost;
+                  let text = `${result.errors.length}/${result.options.attempts}`;
+                  return <span style={{ color: danger ? 'red' : 'black' }}>{text}</span>;
+                } else {
+                  return '-/-';
+                }
+              }
+            },
+            {
+              title: '监听开关',
+              dataIndex: 'handle',
               width: 246,
-              render(status, record) {
+              render(handle, record) {
                 return (
                   <>
-                    <Radio.Group defaultValue={status} buttonStyle="solid" size="small" onChange={e => {
-                      record.status = e.target.value;
+                    <Radio.Group defaultValue={handle} buttonStyle="solid" size="small" onChange={e => {
+                      record.handle = e.target.value;
                       record.updateTime = new Date().getTime();
                       self.changeData(record)
                     }}>
-                      <Radio.Button value="checked">已签约</Radio.Button>
-                      <Radio.Button value="checking">签约中</Radio.Button>
-                      <Radio.Button value="uncheck">未签约</Radio.Button>
+                      <Radio.Button value="watching">开启监听</Radio.Button>
+                      <Radio.Button value="unwatch">关闭监听</Radio.Button>
                     </Radio.Group>
                     <Popconfirm
                       placement="topRight"
@@ -242,17 +262,22 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
           ].map(item => { item.align = "center"; return item })}
         />
         <div className={styles.footer}>
-          <div className={styles.footerTag}>
+          <div className={styles.footerTag} onClick={() => {
+            this.setState({ settingModalShow: !this.state.settingModalShow })
+          }}>
+            <Icon type="setting" /> 设置
+          </div>
+          {/* <div className={styles.footerTag}>
             <Popover placement="topLeft" title='签约数据' content={dataPop} trigger="click">
               <Icon type="database" /> 数据 : {this.state.list.length}
             </Popover>
-          </div>
-          <div className={styles.footerTag}>
+          </div> */}
+          {/* <div className={styles.footerTag}>
             <Popover placement="top" title='倒计时设置' content={timeSet} trigger="click">
               <Icon type="clock-circle" /> 倒计时
             </Popover>
-          </div>
-          <div className={styles.footerTag} onClick={() => {
+          </div> */}
+          {/* <div className={styles.footerTag} onClick={() => {
             ipcRenderer.send('data-backup')
           }}>
             <Icon type="download" /> 数据备份
@@ -261,21 +286,34 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
             ipcRenderer.send('data-reback')
           }}>
             <Icon type="upload" /> 数据恢复
-          </div >
-          <div className={styles.footerTag} onClick={() => {
+          </div > */}
+          {/* <div className={styles.footerTag} onClick={() => {
             ipcRenderer.send('map-open')
           }}>
             <Icon type="environment" /> 打开地图
-          </div >
+          </div > */}
         </div>
         <AddModal
-          title="添加代理商"
+          title="添加地址"
           visible={this.state.addModalVisible}
           onOk={addInfo => {
             this.addData(addInfo)
+            this.setState({ addModalVisible: false })
           }}
           onCancel={() => {
             this.setState({ addModalVisible: false })
+          }}
+        />
+        <SetModal
+          title="设置"
+          visible={this.state.settingModalShow}
+          initialConfig={this.state.config}
+          onOk={setting => {
+            this.changeConfig(setting)
+            this.setState({ settingModalShow: false })
+          }}
+          onCancel={() => {
+            this.setState({ settingModalShow: false })
           }}
         />
       </>
@@ -283,37 +321,12 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
   }
 }
 
+// 添加弹窗
 @Form.create({ name: 'AddModal' }) class AddModal extends PureComponent {
-  codeToCity(codeArr) {
-    let areaName = '', areaCode = '', areaPos = [];
-    P2Data.forEach(province => {
-      if (codeArr[0] && province.value === codeArr[0]) {
-        areaName += province.label;
-        areaCode += province.value;
-        areaPos.push(province.textPosition)
-        province.children.map(city => {
-          if (codeArr[1] && city.value === codeArr[1]) {
-            areaName += ('-' + city.label);
-            areaCode += ('-' + city.value);
-            areaPos.push(city.textPosition)
-          }
-        })
-      }
-    })
-    return {
-      areaName,
-      areaCode,
-      areaPos
-    }
-  }
-  collect() {
-  }
-  filter(inputValue, path) {
-    return path.some(option => option.label.toLowerCase().indexOf(inputValue.toLowerCase()) > -1);
-  }
+
   render() {
 
-    const { getFieldDecorator } = this.props.form;
+    const { getFieldDecorator, resetFields } = this.props.form;
 
     return (
       <Modal
@@ -322,58 +335,91 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
           if (this.props.onOk) {
             this.props.form.validateFields((err, values) => {
               if (!err) {
-                let addInfo = values.add
-                addInfo.area = this.codeToCity(addInfo.area)
-                addInfo.id = addInfo.area.areaCode + '-' + addInfo.mobile;
-                addInfo.addTime = new Date().getTime();
-                addInfo.updateTime = new Date().getTime();
-                this.props.onOk(addInfo)
+                this.props.onOk(values);
+                resetFields()
               }
             })
           }
         }}
       >
         <Form layout="inline" hideRequiredMark>
-          <Form.Item label="姓名称谓">
-            {getFieldDecorator('add.username', {
-              rules: [{ required: true, message: '请输入姓名' }],
+          <Form.Item label="标题">
+            {getFieldDecorator('title', {
+              rules: [{ required: true, message: '请输入地址标题' }],
             })(
-              <Input className={styles.input} />,
+              <Input className={styles.input} />
             )}
           </Form.Item>
           <br />
-          <Form.Item label="联系方式">
-            {getFieldDecorator('add.mobile', {
-              rules: [{ required: true, message: '请输入联系方式' }],
+          <Form.Item label="监听地址">
+            {getFieldDecorator('address', {
+              rules: [{ required: true, message: '请输入IP地址或者域名' }],
             })(
-              <Input className={styles.input} />,
+              <Input className={styles.input} />
             )}
           </Form.Item>
           <br />
-          <Form.Item label="代理地区">
-            {getFieldDecorator('add.area', {
-              rules: [{ required: true, message: '请选择代理地区' }],
+          <Form.Item label="端口地址">
+            {getFieldDecorator('port', {
+              rules: [{ required: true, message: '请输入接口地址' }],
             })(
-              <Cascader
-                options={P2Data}
-                placeholder="选择代理区域"
-                className={styles.input}
-                changeOnSelect
-                showSearch={{ filter: this.filter }}
-              />
+              <Input className={styles.input} />
             )}
           </Form.Item>
-          <br />
-          <Form.Item label="签约状态">
-            {getFieldDecorator('add.status', {
-              rules: [{ required: true, message: '请选择代理地区' }],
-              initialValue: "checked"
+        </Form>
+      </Modal>
+    )
+  }
+
+}
+
+// 设置弹窗
+@Form.create({ name: 'SetModal' }) class SetModal extends PureComponent {
+
+  render() {
+
+    const { getFieldDecorator, resetFields } = this.props.form;
+
+    return (
+      <Modal
+        {...this.props}
+        width={330}
+        onOk={() => {
+          if (this.props.onOk) {
+            this.props.form.validateFields((err, values) => {
+              if (!err) {
+                this.props.onOk(values);
+              }
+            })
+          }
+        }}
+      >
+        <Form layout="inline" hideRequiredMark>
+          <Form.Item label="提醒设置">
+            {getFieldDecorator('alert', {
+              initialValue: this.props.initialConfig.alert || []
             })(
-              <Radio.Group buttonStyle="solid">
-                <Radio.Button value="checked">签约</Radio.Button>
-                <Radio.Button value="checking">意向签约</Radio.Button>
-                <Radio.Button value="uncheck">未签约</Radio.Button>
-              </Radio.Group>
+              <Checkbox.Group>
+                <Checkbox value="ring">声音提醒</Checkbox>
+                <Checkbox value="modal">弹窗提醒</Checkbox>
+              </Checkbox.Group>
+            )}
+          </Form.Item>
+          <Form.Item label="监听频率">
+            {getFieldDecorator('rate', {
+              rules: [{ required: true, message: '监听频率' }],
+              initialValue: this.props.initialConfig.rate || 600
+            })(
+              <Slider className={styles.input} min={600} max={1000 * 5} step={100} />
+            )}
+
+          </Form.Item>
+          <Form.Item label="掉包提醒">
+            {getFieldDecorator('lost', {
+              rules: [{ required: true, message: '掉包提醒' }],
+              initialValue: this.props.initialConfig.lost || 2
+            })(
+              <Slider className={styles.input} dots={true} min={1} max={4} />
             )}
           </Form.Item>
         </Form>
@@ -381,4 +427,3 @@ export default @Form.create({ name: 'Index' }) class Index extends PureComponent
     )
   }
 }
-
